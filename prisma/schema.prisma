@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  id             String   @id @default(cuid())
+  employeeCode   String   @unique
+  name           String
+  department     String   // CUTTING, UPPER, BOTTOM, FINISH
+  status         String   @default("ACTIVE") // ACTIVE, INACTIVE, ON_LEAVE
+  phone          String?
+  skillLevel     String?  // Trainee, Skilled, Expert
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  assignedArticles   Article[]           @relation("AssignedEmployee")
+  stageLogsPerformed ArticleStageLog[]   @relation("StageOperator")
+  stageLogsReceived  ArticleStageLog[]   @relation("NextStageOperator")
+  materialsLogged    MaterialLog[]       @relation("MaterialLogger")
+  dailyLogs          EmployeeLogBook[]   @relation("EmployeeDailyLogs")
+}
+
+model Article {
+  id                 String   @id @default(cuid())
+  articleCode        String   @unique // e.g. ART-902
+  name               String   // e.g. Everest Trek Boot
+  currentStage       String   @default("CUTTING") // CUTTING, UPPER, BOTTOM, FINISH, COMPLETED
+  status             String   @default("IN_PROGRESS") // IN_PROGRESS, STOCKED, COMPLETED
+  totalQuantityPairs Int      @default(0)
+  stockStage         String?  // CUTTING, UPPER, BOTTOM, FINISH (if held in stock)
+  stockLocation      String?  // e.g. Shelf A-3
+  assignedEmployeeId String?
+  notes              String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  assignedEmployee   Employee?           @relation("AssignedEmployee", fields: [assignedEmployeeId], references: [id], onDelete: SetNull)
+  stageLogs          ArticleStageLog[]
+  materials          MaterialLog[]
+}
+
+model ArticleStageLog {
+  id                 String   @id @default(cuid())
+  articleId          String
+  fromStage          String   // INITIAL, CUTTING, UPPER, BOTTOM, FINISH
+  toStage            String   // CUTTING, UPPER, BOTTOM, FINISH, COMPLETED
+  actionTaken        String   // STARTED, FORWARDED, HELD_IN_STOCK, PULLED_FROM_STOCK, COMPLETED
+  quantityPairs      Int
+  employeeId         String?
+  nextEmployeeId     String?
+  notes              String?
+  timestamp          DateTime @default(now())
+
+  article            Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  operator           Employee? @relation("StageOperator", fields: [employeeId], references: [id], onDelete: SetNull)
+  nextOperator       Employee? @relation("NextStageOperator", fields: [nextEmployeeId], references: [id], onDelete: SetNull)
+}
+
+model MaterialLog {
+  id                 String   @id @default(cuid())
+  articleId          String
+  department         String   // CUTTING, UPPER, BOTTOM, FINISH
+  materialName       String   // e.g. Leather, Rubber Sole, Adhesive, Thread
+  unit               String   // sq_ft, meters, kg, pairs, liters, pieces
+  unitPrice          Float    // Cost per unit in Rs.
+  quantityUsed       Float    // Quantity consumed
+  totalCost          Float    // Calculated total in Rs.
+  loggedByEmployeeId String?
+  notes              String?
+  createdAt          DateTime @default(now())
+
+  article            Article   @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  loggedBy           Employee? @relation("MaterialLogger", fields: [loggedByEmployeeId], references: [id], onDelete: SetNull)
+}
+
+model MaterialItem {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  category           String   // LEATHER, SOLE, ADHESIVE, LINING, HARDWARE, THREAD, OTHER
+  defaultUnit        String   // sq_ft, meters, kg, pairs, liters, pieces
+  defaultPrice       Float    @default(0.0) // in Rs.
+  department         String?  // CUTTING, UPPER, BOTTOM, FINISH, ALL
+  createdAt          DateTime @default(now())
+}
+
+model EmployeeLogBook {
+  id                 String   @id @default(cuid())
+  date               DateTime @default(now())
+  employeeId         String
+  department         String   // CUTTING, UPPER, BOTTOM, FINISH
+  shift              String   @default("Day Shift") // Day Shift, Night Shift, Morning Shift
+  attendance         String   @default("PRESENT") // PRESENT, ABSENT, HALF_DAY, LEAVE
+  pairsProduced      Int      @default(0) // Pairs crafted/completed
+  ratePerPair        Float    @default(0.0) // Piece wage rate in Rs.
+  totalEarnings      Float    @default(0.0) // Total earned in Rs.
+  overtimeHours      Float    @default(0.0) // Overtime in hours
+  articleCode        String?  // Style/Model worked on
+  remarks            String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  employee           Employee @relation("EmployeeDailyLogs", fields: [employeeId], references: [id], onDelete: Cascade)
+}
+
+model Order {
+  id                 String   @id @default(cuid())
+  orderCode          String   @unique         // e.g. ORD-001
+  customerName       String                   // Who placed the order
+  customerPhone      String?                  // Contact phone
+  customerAddress    String?                  // Delivery address / city
+  totalAmount        Float     @default(0.0)  // Sum of all items in Rs.
+  amountPaid         Float     @default(0.0)  // Amount received so far in Rs.
+  amountRemaining    Float     @default(0.0)  // Balance due in Rs.
+  status             String    @default("PENDING") // PENDING, IN_PRODUCTION, READY, DELIVERED, CANCELLED
+  paymentStatus      String    @default("UNPAID")  // UNPAID, PARTIAL, PAID
+  orderDate          DateTime  @default(now())
+  paymentDate        DateTime?                // Date payment was received
+  deliveryDate       DateTime?                // Expected delivery
+  deliveredDate      DateTime?                // Actual delivery
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  items              OrderItem[]
+}
+
+model OrderItem {
+  id                 String   @id @default(cuid())
+  orderId            String
+  articleCode        String                   // Which article/style
+  articleName        String?                  // Shoe model name
+  color              String                   // Color requested
+  sizes              String                   // e.g. "38,39,40,41,42"
+  quantityPairs      Int                      // Pairs for this line
+  pricePerPair       Float     @default(0.0)  // Per-pair price in Rs.
+  lineTotal          Float     @default(0.0)  // quantity × price
+  notes              String?
+  createdAt          DateTime  @default(now())
+
+  order              Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
